@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fyne.io/fyne/v2/dialog"
+	"os/exec"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -25,6 +28,7 @@ func main() {
 	md5Form := createMD5Form(resultLabel)
 	base64Form := createBase64Form(resultLabel)
 	jsonForm := createJSONForm(resultLabel)
+	protoForm := createProtoForm(resultLabel, myWindow)
 
 	toolbar := container.NewVBox(
 		widget.NewButton("MD5", func() {
@@ -35,6 +39,9 @@ func main() {
 		}),
 		widget.NewButton("JSON", func() {
 			setContent(myWindow, jsonForm, resultLabel, copyButton)
+		}),
+		widget.NewButton("Proto", func() {
+			setContent(myWindow, protoForm, resultLabel, copyButton)
 		}),
 	)
 
@@ -64,6 +71,9 @@ func setContent(window fyne.Window, form fyne.CanvasObject, resultLabel *widget.
 		}),
 		widget.NewButton("JSON", func() {
 			setContent(window, createJSONForm(resultLabel), resultLabel, copyButton)
+		}),
+		widget.NewButton("Proto", func() {
+			setContent(window, createProtoForm(resultLabel, window), resultLabel, copyButton)
 		}),
 	)
 
@@ -125,4 +135,65 @@ func createJSONForm(resultLabel *widget.Label) fyne.CanvasObject {
 	})
 
 	return container.NewVBox(inputEntry, formatButton)
+}
+
+func createProtoForm(resultLabel *widget.Label, window fyne.Window) fyne.CanvasObject {
+	protoPathLabel := widget.NewLabel("No file selected")
+	selectProtoButton := widget.NewButton("Select .proto file", func() {
+		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				resultLabel.SetText("Error: " + err.Error())
+				return
+			}
+			if reader == nil {
+				resultLabel.SetText("No file selected")
+				return
+			}
+			protoPathLabel.SetText(reader.URI().Path())
+		}, window)
+	})
+
+	outputDirLabel := widget.NewLabel("No directory selected")
+	selectOutputDirButton := widget.NewButton("Select output directory", func() {
+		dialog.ShowFolderOpen(func(list fyne.ListableURI, err error) {
+			if err != nil {
+				resultLabel.SetText("Error: " + err.Error())
+				return
+			}
+			if list == nil {
+				resultLabel.SetText("No directory selected")
+				return
+			}
+			outputDirLabel.SetText(list.Path())
+		}, window)
+	})
+
+	generateButton := widget.NewButton("Generate .go file", func() {
+		protoPath := protoPathLabel.Text
+		outputDir := outputDirLabel.Text
+		if protoPath == "No file selected" || outputDir == "No directory selected" {
+			resultLabel.SetText("Please select both .proto file and output directory")
+			return
+		}
+		protoDir := filepath.Dir(protoPath)
+		generateGoFromProto(protoPath, protoDir, outputDir, resultLabel)
+	})
+
+	return container.NewVBox(
+		selectProtoButton,
+		protoPathLabel,
+		selectOutputDirButton,
+		outputDirLabel,
+		generateButton,
+	)
+}
+
+func generateGoFromProto(protoPath string, protoDir string, outputDir string, resultLabel *widget.Label) {
+	cmd := exec.Command("protoc", "--proto_path="+protoDir, "--go_out="+outputDir, protoPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		resultLabel.SetText("Error: " + err.Error() + "\n" + string(output))
+		return
+	}
+	resultLabel.SetText("Successfully generated .go file from " + filepath.Base(protoPath) + " to " + outputDir)
 }
